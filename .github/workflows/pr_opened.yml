@@ -1,0 +1,307 @@
+name: PR Opened
+on:
+  pull_request:
+    types:
+      - opened
+      - reopened
+      - synchronize
+concurrency: 
+  group: pr_auto
+  cancel-in-progress: false
+jobs:
+  edit_pr:
+    runs-on: ubuntu-latest
+    container:
+      image: hpaper/github-action 
+    steps:
+      - name: Validate PR branch paths
+        if: github.event.action == 'opened'
+        run: |
+          # PR의 head와 base 브랜치 이름을 가져옵니다
+          HEAD_REF="${{ github.head_ref }}"
+          BASE_REF="${{ github.base_ref }}"
+
+          # head 브랜치 이름에 따라 base 브랜치 이름을 검증합니다
+          if [[ $HEAD_REF == hotfix-* ]]; then
+            if [[ $BASE_REF != main ]]; then
+              echo "Invalid base branch for hotfix. It should be either 'main', 'develop' or 'release'."
+              NEW_BODY="hotfix 브랜치는 main 브랜치로만 PR할 수 있습니다. PR을 닫은 후 재대로된 경로로 PR을 다시 올려주세요."
+              # PR 본문을 업데이트합니다
+              gh pr edit ${{ github.event.pull_request.number }} --body "$NEW_BODY"
+              exit 1
+            fi
+          elif [[ $HEAD_REF == rcfix-* ]]; then
+            if [[ $BASE_REF != release ]]; then
+              echo "Invalid base branch for rcfix. It should be either 'release' or 'develop'."
+              NEW_BODY="rcfix 브랜치는 release 브랜치로만 PR할 수 있습니다. PR을 닫은 후 재대로된 경로로 PR을 다시 올려주세요."
+              # PR 본문을 업데이트합니다
+              gh pr edit ${{ github.event.pull_request.number }} --body "$NEW_BODY"
+              exit 1
+            fi
+          elif [[ $HEAD_REF == feature-* ]]; then
+            if [[ $BASE_REF != develop ]]; then
+              echo "Invalid base branch for feature. It should be 'develop'."
+              NEW_BODY="feature 브랜치는 develop 브랜치로만 PR할 수 있습니다. PR을 닫은 후 재대로된 경로로 PR을 다시 올려주세요."
+              # PR 본문을 업데이트합니다
+              gh pr edit ${{ github.event.pull_request.number }} --body "$NEW_BODY"
+              exit 1
+            fi
+          elif [[ $HEAD_REF == develop ]]; then
+            if [[ $BASE_REF != release ]]; then
+              echo "Invalid base branch for develop. It should be 'release'."
+              NEW_BODY="develop 브랜치는 release 브랜치로만 PR할 수 있습니다.. PR을 닫은 후 재대로된 경로로 PR을 다시 올려주세요."
+              # PR 본문을 업데이트합니다
+              gh pr edit ${{ github.event.pull_request.number }} --body "$NEW_BODY"
+              exit 1
+            fi
+          elif [[ $HEAD_REF == release ]]; then
+            if [[ $BASE_REF != main ]]; then
+              echo "Invalid base branch for release. It should be 'main'."
+              NEW_BODY="release 브랜치는 main 브랜치로만 PR할 수 있습니다.. PR을 닫은 후 재대로된 경로로 PR을 다시 올려주세요."
+              # PR 본문을 업데이트합니다
+              gh pr edit ${{ github.event.pull_request.number }} --body "$NEW_BODY"
+              exit 1
+            fi
+          else
+            echo "Invalid head branch. It should be either 'hotfix-*', 'rcfix-*', 'feature-*', 'develop' or 'release'."
+            NEW_BODY="hotfix, rcfix, feature 브랜치가 아닌경우 PR할 수 없습니다. PR을 닫은 후 재대로된 경로로 PR을 다시 올려주세요."
+            # PR 본문을 업데이트합니다
+            gh pr edit ${{ github.event.pull_request.number }} --body "$NEW_BODY"
+            exit 1
+          fi
+        shell: bash
+        
+      - name: Set git user
+        run: |
+          git config --global user.email "github-actions[bot]@users.noreply.github.com"
+          git config --global user.name "github-actions[bot]"
+
+      - name: Checkout code
+        uses: actions/checkout@v2
+        
+      - name: Fix directory ownership and permissions
+        run: |
+          chown -R $(whoami) /__w/${{ github.event.repository.name }}/${{ github.event.repository.name }}
+          chmod -R u+rwX /__w/${{ github.event.repository.name }}/${{ github.event.repository.name }}
+
+      - name: Merge base branch into head branch
+        run: |
+          git fetch origin ${{ github.event.pull_request.base.ref }}:${{ github.event.pull_request.base.ref }}
+          git fetch origin ${{ github.event.pull_request.head.ref }}:${{ github.event.pull_request.head.ref }}
+          git checkout ${{ github.event.pull_request.head.ref }}
+          git merge --allow-unrelated-histories ${{ github.event.pull_request.base.ref }}
+          git push origin ${{ github.head_ref }}
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Edit PR Title, Label, Reviewer
+        run: |
+          BASE_BRANCH="${{ github.base_ref }}"  
+          HEAD_BRANCH="${{ github.head_ref }}"  
+
+          # PR 제목 수정 및 라벨 추가
+          PR_TITLE=$(gh pr view ${{ github.event.pull_request.number }} --json title -q '.title')
+
+          # 대괄호([])로 둘러싸인 부분을 제거합니다
+          PR_TITLE=${PR_TITLE#*\]}
+
+          if [[ $HEAD_BRANCH == hotfix-* && $BASE_BRANCH == main ]]; then
+            echo "Hotfix"
+
+            BASE_VERSION=$(python3 ./.github/changelogs/get_last_version.py "CHANGELOG.rst")
+            NEW_VERSION=$(python3 ./.github/changelogs/get_new_version.py "$BASE_VERSION" "patch")
+            NEW_TITLE="[Hotfix $NEW_VERSION] $PR_TITLE"
+            LABEL="Hotfix :fire:"
+
+            # 제목 수정
+            gh pr edit ${{ github.event.pull_request.number }} --title "$NEW_TITLE"
+            # 라벨 추가
+            gh pr edit ${{ github.event.pull_request.number }} --add-label "$LABEL"
+            
+          elif [[ $HEAD_BRANCH == rcfix-* && $BASE_BRANCH == release ]]; then
+            echo "RCfix"
+
+            BASE_VERSION=$(python3 ./.github/changelogs/get_last_version.py "CHANGELOG_PRE.rst")
+            NEW_VERSION=$(python3 ./.github/changelogs/get_new_version.py "$BASE_VERSION" "rc")
+            NEW_TITLE="[RCFix $NEW_VERSION] $PR_TITLE"
+            LABEL="Release Candidate :candy:"
+
+            # 제목 수정
+            gh pr edit ${{ github.event.pull_request.number }} --title "$NEW_TITLE"
+            # 라벨 추가
+            gh pr edit ${{ github.event.pull_request.number }} --add-label "$LABEL"
+
+          elif [[ $HEAD_BRANCH == feature-* && $BASE_BRANCH == develop ]]; then
+            echo "Feature"
+
+            BASE_VERSION=$(python3 ./.github/changelogs/get_last_version.py "CHANGELOG_DEV.rst")
+            NEW_VERSION=$(python3 ./.github/changelogs/get_new_version.py "$BASE_VERSION" "rc1")
+            NEW_TITLE="[Feature $NEW_VERSION] $PR_TITLE"
+            LABEL="Feature :toolbox:"  
+
+            # 제목 수정
+            gh pr edit ${{ github.event.pull_request.number }} --title "$NEW_TITLE"
+            # 라벨 추가
+            gh pr edit ${{ github.event.pull_request.number }} --add-label "$LABEL"
+
+          elif [[ $HEAD_BRANCH == release && $BASE_BRANCH == main ]]; then
+            echo "Release"
+
+            BASE_VERSION=$(python3 ./.github/changelogs/get_last_version.py "CHANGELOG_PRE.rst")
+            NEW_VERSION=$(python3 ./.github/changelogs/get_new_version.py "$BASE_VERSION" "rc_remove")
+            python3 ./.github/changelogs/move_changelog.py "$NEW_VERSION" "CHANGELOG_PRE.rst" "CHANGELOG.rst"
+            CHANGELOG=$(python3 ./.github/changelogs/get_last_change.py "CHANGELOG.rst")
+
+            NEW_TITLE="Release $NEW_VERSION"
+            NEW_BODY="${CHANGELOG}$(cat .github/PULL_REQUEST_TEMPLATE/release_to_main.md)"
+            LABEL="Release :rocket:"
+
+            # 제목 수정
+            gh pr edit ${{ github.event.pull_request.number }} --title "$NEW_TITLE"
+            # 라벨 추가
+            gh pr edit ${{ github.event.pull_request.number }} --add-label "$LABEL"
+            # PR 내용 추가
+            if [[ $PR_BODY == *"### Review 체크 리스트"* ]]; then
+              echo "No need to edit PR_BODY"
+            else
+              gh pr edit ${{ github.event.pull_request.number }} --body "$NEW_BODY"
+            fi
+
+          elif [[ $HEAD_BRANCH == develop && $BASE_BRANCH == release ]]; then
+            echo "Pre-Release"
+
+            # Develop branch의 PR 버전과 CHANGELOG_PRE.rst의 내용을 가지고 옵니다.
+            VERSION=$(python3 ./.github/changelogs/get_last_version.py "CHANGELOG_DEV.rst")
+            python3 ./.github/changelogs/clear_changelog.py "CHANGELOG_PRE.rst"
+            python3 ./.github/changelogs/move_changelog.py "$VERSION" "CHANGELOG_DEV.rst" "CHANGELOG_PRE.rst"
+            CHANGELOG=$(python3 ./.github/changelogs/get_last_change.py "CHANGELOG_PRE.rst")
+
+            NEW_TITLE="Pre-Release $VERSION"
+            NEW_BODY="${CHANGELOG}$(cat .github/PULL_REQUEST_TEMPLATE/develop_to_release.md)"
+            LABEL="Release :rocket:"
+
+            # 제목 수정
+            gh pr edit ${{ github.event.pull_request.number }} --title "$NEW_TITLE"
+            # 라벨 추가
+            gh pr edit ${{ github.event.pull_request.number }} --add-label "$LABEL"
+            # PR 내용 추가
+            if [[ $PR_BODY == *"### Review 체크 리스트"* ]]; then
+              echo "No need to edit PR_BODY"
+            else
+              gh pr edit ${{ github.event.pull_request.number }} --body "$NEW_BODY"
+            fi
+
+          else
+            echo "No edit PR Title and Label"
+          fi
+
+          # 매핑 파일을 읽고 매핑을 생성합니다
+          declare -A mapping
+          while IFS="=" read -r email github_username
+          do
+            mapping["$email"]="$github_username"
+          done < .github/github_username.txt
+
+          set +e
+          # 커밋 작성자를 찾습니다
+          authors=$(git log ${{ github.event.pull_request.base.sha }}..${{ github.event.pull_request.head.sha }} --pretty="%b" | grep Signed-off-by: | cut -d '<' -f 2 | cut -d '>' -f 1 | sort | uniq)
+          echo "${{ github.event.pull_request.base.sha }} ~ ${{ github.event.pull_request.head.sha }} : $authors"
+
+          # 작성자를 배열로 변환합니다
+          readarray -t authors_array <<<"$authors"
+                              
+          # 배열을 15명씩 그룹화하고 각 그룹에 대해 리뷰어를 추가합니다
+          for ((i=0; i<${#authors_array[@]}; i+=15)); do
+            reviewers=()
+            for ((j=i; j<i+15 && j<${#authors_array[@]}; j++)); do
+              email=${authors_array[j]}
+              if [ -z "${mapping["$email"]}" ]; then
+                echo "No GitHub username found for email '$email'"
+                continue
+              fi
+              reviewers+=("${mapping["$email"]}")
+            done
+            IFS=',' reviewers_string="${reviewers[*]}"
+
+            gh pr edit ${{ github.event.pull_request.number }} --add-reviewer "$reviewers_string"
+            if [ $? -ne 0 ]; then
+              echo "Error occurred while adding reviewers"
+            fi
+          done
+          set -e
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        shell: bash
+         
+      - name: Edit PR Body and Assignee
+        if : ${{ github.event.action == 'opened' ||  github.event.action == 'reopened' }}
+        run: |
+          BASE_BRANCH="${{ github.base_ref }}"  
+          HEAD_BRANCH="${{ github.head_ref }}"
+
+          # GitHub CLI를 사용하여 현재 Pull Request의 본문을 가져옵니다
+          PR_BODY=$(gh pr view ${{ github.event.pull_request.number }} --json body -q '.body')
+          PR_URL=${{ github.event.pull_request.html_url }}
+          AUTHOR=${{ github.event.pull_request.user.login }}
+
+          # PR 내용에 Template 추가 (체크리스트 적용)
+          if [[ $HEAD_BRANCH == hotfix-* && $BASE_BRANCH == main ]]; then
+            echo "Hotfix"
+
+            NEW_BODY="${PR_BODY}$(cat .github/PULL_REQUEST_TEMPLATE/hotfix_to_main.md)"
+            # PR 내용에 Template 추가 (체크리스트 적용)
+            if [[ $PR_BODY == *"### Review 체크 리스트"* ]]; then
+              echo "No need to edit PR_BODY"
+            else
+              gh pr edit ${{ github.event.pull_request.number }} --body "$NEW_BODY"
+            fi
+            
+          elif [[ $HEAD_BRANCH == rcfix-* && $BASE_BRANCH == release ]]; then
+            echo "RCfix"
+
+            NEW_BODY="${PR_BODY}$(cat .github/PULL_REQUEST_TEMPLATE/rcfix_to_release.md)"
+            # PR 내용에 Template 추가 (체크리스트 적용)
+            if [[ $PR_BODY == *"### Review 체크 리스트"* ]]; then
+              echo "No need to edit PR_BODY"
+            else
+              gh pr edit ${{ github.event.pull_request.number }} --body "$NEW_BODY"
+            fi
+
+          elif [[ $HEAD_BRANCH == feature-* && $BASE_BRANCH == develop ]]; then
+            echo "Feature"
+
+            NEW_BODY="${PR_BODY}$(cat .github/PULL_REQUEST_TEMPLATE/feature_to_develop.md)"
+            # PR 내용에 Template 추가 (체크리스트 적용)
+            if [[ $PR_BODY == *"### Review 체크 리스트"* ]]; then
+              echo "No need to edit PR_BODY"
+            else
+              gh pr edit ${{ github.event.pull_request.number }} --body "$NEW_BODY"
+            fi
+
+          elif [[ $HEAD_BRANCH == release && $BASE_BRANCH == main ]]; then
+            echo "Release"
+          
+          elif [[ $HEAD_BRANCH == release && $BASE_BRANCH == main ]]; then
+            echo "Pre-Release"
+
+          else
+            echo "No edit PR Body"
+          fi
+
+          # 담당자 추가
+          # base 브랜치 이름에 따라 ASSIGNEE를 설정합니다
+          if [[ $BASE_BRANCH == main ]]; then
+            ASSIGNEE=$TOTAL_MANAGER
+          elif [[ $BASE_BRANCH == release || $BASE_BRANCH == develop ]]; then
+            ASSIGNEE=$REPO_MANAGER
+          else
+            echo "Invalid base branch. It should be either 'main', 'release' or 'develop'."
+            exit 1
+          fi
+          # PR에 할당자를 추가합니다
+          gh pr edit ${{ github.event.pull_request.number }} --add-assignee $ASSIGNEE
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TOTAL_MANAGER: 'kaym9n' # 총담당자의 GitHub 사용자 이름
+          REPO_MANAGER: 'pung87' # 리포지토리 담당자의 GitHub 사용자 이름
+        shell: bash

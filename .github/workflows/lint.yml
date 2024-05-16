@@ -1,0 +1,32 @@
+name: Lint
+on: pull_request
+concurrency:
+  group: lint-${{ github.head_ref }}
+  cancel-in-progress: true
+jobs:
+  ament_lint:
+    runs-on: ubuntu-latest
+    container:
+      image: hpaper/github-action
+    strategy:
+      fail-fast: false
+      matrix:
+        linter: [flake8, pep257]
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v2
+
+      - name: Configure ROS repository
+        run: |
+          apt-get update
+          apt install -y python3-rosdep
+          rosdep update
+
+      - name: Run ROS Lint
+        uses: ros-tooling/action-ros-lint@master
+        with:
+          distribution: foxy
+          linter: ${{ matrix.linter }}
+          arguments: '--exclude train_models/*'
+          package-name: |
+            antis_dl_tools
