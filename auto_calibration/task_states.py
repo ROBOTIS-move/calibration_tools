@@ -12,7 +12,8 @@ class StepState(Enum):
     CAMERA_CONNECTION = 0
     INITIALIZATION = 1
     CALIBRATION = 2
-    ROM_WRITING = 3
+    CALIBRATION_FAIL = 3
+    ROM_WRITING = 4
 
 
 class DynamixelState(Enum):

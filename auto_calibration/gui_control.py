@@ -28,7 +28,7 @@ class GuiControl(QtWidgets.QMainWindow):
         self.auto_calib_gui = auto_calib_ui.Ui_MainWindow()
         self.auto_calib_gui.setupUi(self)
         self.dxl = dxl.DynamixelControl('/dev/ttyUSB1', 1, 4000000)
-        self.calib = calib.CameraCalibrator(9, 6, 40.0)
+        self.calib = calib.CameraCalibrator(9, 6, 40.0, calib_tol=1.1)
         self.cam = csi.CSICamera(
             '/dev/v4l/by-path/platform-tegra-capture-vi-video-index0', 1920, 1080)
         self.capture_thread = worker.CaptureThreadWorker(self.cam, self.calib, self.dxl)
@@ -114,6 +114,10 @@ class GuiControl(QtWidgets.QMainWindow):
                 'calibration',
                 task_states.ButtonState.ENABLED)
             self.set_pass_fail_state()
+        elif step == task_states.StepState.CALIBRATION_FAIL:
+            self.set_button_state(
+                'calibration',
+                task_states.ButtonState.DISABLED)
         elif step == task_states.StepState.ROM_WRITING:
             self.set_button_state(
                 'calibration',
@@ -254,7 +258,7 @@ class GuiControl(QtWidgets.QMainWindow):
             self.change_step(task_states.StepState.ROM_WRITING)
         else:
             self.set_pass_fail_state('FAIL')
-            self.change_step(task_states.StepState.INITIALIZATION)
+            self.change_step(task_states.StepState.CALIBRATION_FAIL)
 
     def get_image(self, qimg):
         pixmap = QtGui.QPixmap.fromImage(qimg)
