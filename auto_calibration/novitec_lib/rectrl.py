@@ -1,4 +1,5 @@
 from ctypes import c_char_p, c_double, c_int32, c_int8, c_uint16, cdll, POINTER
+import os
 
 # CAM ID
 (CAM0, CAM1, CAM2, CAM3, CAM4, CAM5, CAM_ALL) = (1, 2, 3, 4, 5, 6, 255)
@@ -12,7 +13,7 @@ from ctypes import c_char_p, c_double, c_int32, c_int8, c_uint16, cdll, POINTER
  SHARPNESS, MIRROR, FLIP, SHADING_MODE, SHADING_WEIGHT,
  SHADING_DET, REF_FRAMERATE) = (1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17)
 
-rectrl = cdll.LoadLibrary('./novitec_lib/librectrl.so')
+rectrl = cdll.LoadLibrary(os.environ['NOVITEC_LIBRARY_PATH'] + '/librectrl.so')
 rectrl.RECTRL_Open.argtypes = []
 rectrl.RECTRL_Close.argtypes = []
 rectrl.RECTRL_Set.argtypes = [c_int32, c_int32, c_int32]
