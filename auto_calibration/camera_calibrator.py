@@ -14,13 +14,17 @@ class CameraCalibrator:
             num_y_corners,
             square_size,
             save_path='./result',
-            calib_tol=2.0):
+            calib_pix_tol=2.0,
+            calib_dist_avg=24.8623,
+            calib_dist_sd=0.4025):
         self.num_corners = (num_x_corners, num_y_corners)
         self.square_size = square_size
         self.cam_params = []
         self.criteria = (cv2.TERM_CRITERIA_EPS + cv2.TERM_CRITERIA_MAX_ITER, 30, 0.001)
         self.save_path = save_path
-        self.calib_tol = calib_tol
+        self.calib_pix_tol = calib_pix_tol
+        self.cam_dist_avg = calib_dist_avg
+        self.cam_dist_sd = calib_dist_sd
 
     def initialize_save_folder(self):
         if not os.path.exists(self.save_path):
@@ -206,4 +210,7 @@ class CameraCalibrator:
         board_to_pin[1, 3] = 82.5
         board_to_pin[2, 3] = -300.0
         cam_to_pin = cam_to_board @ board_to_pin
-        return cam_to_pin[:3, :3], cam_to_pin[:3, 3]
+        calc_dcm = cam_to_pin[:3, :3]
+        calc_tvec = cam_to_pin[:3, 3]
+
+        return calc_dcm, calc_tvec

@@ -28,7 +28,7 @@ class GuiControl(QtWidgets.QMainWindow):
         self.auto_calib_gui = auto_calib_ui.Ui_MainWindow()
         self.auto_calib_gui.setupUi(self)
         self.dxl = dxl.DynamixelControl('/dev/ttyUSB1', 1, 4000000)
-        self.calib = calib.CameraCalibrator(9, 6, 40.0, calib_tol=1.1)
+        self.calib = calib.CameraCalibrator(9, 6, 40.0, calib_pix_tol=1.1)
         self.cam = csi.CSICamera(
             '/dev/v4l/by-path/platform-tegra-capture-vi-video-index0', 1920, 1080)
         self.capture_thread = worker.CaptureThreadWorker(self.cam, self.calib, self.dxl)
@@ -239,7 +239,12 @@ class GuiControl(QtWidgets.QMainWindow):
         self.print_to_ui('[Translation (cam to pin)]')
         self.print_to_ui(cam_tvec)
         self.enable_all_buttons()
-        if reproj_err[0] < self.calib.calib_tol:
+
+        dist = np.linalg.norm(cam_tvec)
+        threshold = 3 * self.calib.calib_dist_sd
+
+        if reproj_err[0] < self.calib.calib_pix_tol and \
+           abs(dist - self.calib.calib_dist_avg) <= threshold:
             self.calib.save_result(reproj_err, cam_mat, cam_dcm, cam_tvec)
             rod = self.calib.convert_to_rodrigues(cam_dcm)
             self.calib.cam_params = [
