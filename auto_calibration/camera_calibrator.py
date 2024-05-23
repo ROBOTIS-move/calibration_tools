@@ -23,8 +23,8 @@ class CameraCalibrator:
         self.criteria = (cv2.TERM_CRITERIA_EPS + cv2.TERM_CRITERIA_MAX_ITER, 30, 0.001)
         self.save_path = save_path
         self.calib_pix_tol = calib_pix_tol
-        self.cam_dist_avg = calib_dist_avg
-        self.cam_dist_sd = calib_dist_sd
+        self.calib_dist_avg = calib_dist_avg
+        self.calib_dist_sd = calib_dist_sd
 
     def initialize_save_folder(self):
         if not os.path.exists(self.save_path):
