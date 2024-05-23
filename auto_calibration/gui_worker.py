@@ -109,5 +109,6 @@ class CaptureThreadWorker(QtCore.QThread):
                         self.ui_log_signal.emit('img none!')
             else:
                 img = self.cam.get_image()
-                qimg = self.convert_cv_to_qimg(img)
-                self.streaming_signal.emit(qimg)
+                if img is not None:
+                    qimg = self.convert_cv_to_qimg(img)
+                    self.streaming_signal.emit(qimg)

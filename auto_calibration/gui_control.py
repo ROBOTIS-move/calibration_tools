@@ -240,11 +240,15 @@ class GuiControl(QtWidgets.QMainWindow):
         self.print_to_ui(cam_tvec)
         self.enable_all_buttons()
 
-        dist = np.linalg.norm(cam_tvec)
-        threshold = 3 * self.calib.calib_dist_sd
+        diff_vec = abs(cam_tvec - self.calib.calib_tvec_avg)
+        threshold_x = 7 * self.calib.calib_tvec_sd[0]
+        threshold_y = 7 * self.calib.calib_tvec_sd[1]
+        threshold_z = 5 * self.calib.calib_tvec_sd[2]
 
         if reproj_err[0] < self.calib.calib_pix_tol and \
-           abs(dist - self.calib.calib_dist_avg) <= threshold:
+           diff_vec[0] < threshold_x and \
+           diff_vec[1] < threshold_y and \
+           diff_vec[2] < threshold_z:
             self.calib.save_result(reproj_err, cam_mat, cam_dcm, cam_tvec)
             rod = self.calib.convert_to_rodrigues(cam_dcm)
             self.calib.cam_params = [
