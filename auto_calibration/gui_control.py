@@ -92,7 +92,6 @@ class GuiControl(QtWidgets.QMainWindow):
             self.set_button_state(
                 'rom',
                 task_states.ButtonState.DISABLED)
-            self.set_pass_fail_state()
         elif step == task_states.StepState.INITIALIZATION:
             self.set_button_state(
                 'initialization',
@@ -103,7 +102,6 @@ class GuiControl(QtWidgets.QMainWindow):
             self.set_button_state(
                 'rom',
                 task_states.ButtonState.DISABLED)
-            self.set_pass_fail_state()
         elif step == task_states.StepState.CALIBRATION:
             self.set_button_state(
                 'initialization',
@@ -111,7 +109,9 @@ class GuiControl(QtWidgets.QMainWindow):
             self.set_button_state(
                 'calibration',
                 task_states.ButtonState.ENABLED)
-            self.set_pass_fail_state()
+            self.set_button_state(
+                'rom',
+                task_states.ButtonState.DISABLED)
         elif step == task_states.StepState.CALIBRATION_FAIL:
             self.set_button_state(
                 'calibration',
@@ -137,12 +137,24 @@ class GuiControl(QtWidgets.QMainWindow):
 
     def set_pass_fail_state(self, state='Result'):
         self.auto_calib_gui.pass_fail_label.setText(state)
-        if state == 'PASS':
+        if state == 'Connected':
+            self.auto_calib_gui.pass_fail_label.setStyleSheet(
+               'color: white;')
+        elif state == 'Initialized':
+            self.auto_calib_gui.pass_fail_label.setStyleSheet(
+               'color: white;')
+        elif state == 'Calibrating...':
+            self.auto_calib_gui.pass_fail_label.setStyleSheet(
+               'color: white; background-color: rgb(0, 0, 255);')
+        elif state == 'PASS':
             self.auto_calib_gui.pass_fail_label.setStyleSheet(
                'color: white; background-color: rgb(0, 255, 0);')
         elif state == 'FAIL':
             self.auto_calib_gui.pass_fail_label.setStyleSheet(
                'color: white; background-color: rgb(255, 0, 0);')
+        elif state == 'Writing...':
+            self.auto_calib_gui.pass_fail_label.setStyleSheet(
+               'color: white; background-color: rgb(0, 0, 255);')
         else:
             self.auto_calib_gui.pass_fail_label.setStyleSheet('')
 
@@ -160,6 +172,7 @@ class GuiControl(QtWidgets.QMainWindow):
                 self.capture_thread.start()
                 self.rom_write_thread.run_thread = True
                 self.rom_write_thread.start()
+                self.set_pass_fail_state('Connected')
                 self.change_step(task_states.StepState.INITIALIZATION)
             else:
                 self.print_to_ui('Cannot open camera')
@@ -173,6 +186,7 @@ class GuiControl(QtWidgets.QMainWindow):
             if self.dxl.close_dxl() == task_states.CameraState.TASK_SUCCESS:
                 self.print_to_ui('Close dxl')
             self.auto_calib_gui.image_stream.clear()
+            self.set_pass_fail_state('Disconnected')
             self.change_step(task_states.StepState.CAMERA_CONNECTION)
 
     def on_initialization_button_toggled(self, is_checked):
@@ -181,16 +195,19 @@ class GuiControl(QtWidgets.QMainWindow):
             self.capture_thread.img_cnt = 0
             self.dxl.back_to_homing_position()
             self.print_to_ui('Initialize calibration jig successfully')
+            self.set_pass_fail_state('Initialized')
             self.change_step(task_states.StepState.CALIBRATION)
 
     def on_calibration_button_toggled(self, is_checked):
         if is_checked:
             self.disable_all_buttons()
+            self.set_pass_fail_state('Calibrating...')
             self.capture_thread.enable_data_acquisition()
 
     def on_rom_writing_button_toggled(self, is_checked):
         if is_checked:
             self.disable_all_buttons()
+            self.set_pass_fail_state('Writing...')
             self.rom_write_thread.enable_write_rom()
             self.print_to_ui('Waiting for complete...')
 
@@ -209,6 +226,7 @@ class GuiControl(QtWidgets.QMainWindow):
         else:
             self.print_to_ui('Read calibration data successfully')
             self.print_to_ui(data_array)
+            self.set_pass_fail_state('Connected')
             self.change_step(task_states.StepState.INITIALIZATION)
 
     def load_data(self):
