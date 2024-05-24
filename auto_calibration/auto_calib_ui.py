@@ -67,7 +67,7 @@ class Ui_MainWindow(object):
         self.pass_fail_label.setStyleSheet(u'')
         self.pass_fail_label.setAlignment(Qt.AlignCenter)
 
-        self.gridLayout.addWidget(self.pass_fail_label, 3, 1, 1, 1)
+        self.gridLayout.addWidget(self.pass_fail_label, 4, 1, 1, 1)
 
         self.calibration_push_button = QPushButton(self.centralwidget)
         self.calibration_push_button.setObjectName(
@@ -104,7 +104,7 @@ class Ui_MainWindow(object):
         self.rom_writing_push_button.setCheckable(True)
         self.rom_writing_push_button.setChecked(False)
 
-        self.gridLayout.addWidget(self.rom_writing_push_button, 4, 1, 1, 1)
+        self.gridLayout.addWidget(self.rom_writing_push_button, 3, 1, 1, 1)
 
         self.image_stream = QLabel(self.centralwidget)
         self.image_stream.setObjectName(u'image_stream')
@@ -135,7 +135,7 @@ class Ui_MainWindow(object):
 
     def retranslateUi(self, MainWindow):
         MainWindow.setWindowTitle(
-            QCoreApplication.translate('MainWindow', u'MainWindow', None))
+            QCoreApplication.translate('MainWindow', u'Calibration Tool', None))
         self.actionFull_screen.setText(
             QCoreApplication.translate('MainWindow', u'Full-screen', None))
         self.initialization_push_button.setText(

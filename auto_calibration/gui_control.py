@@ -193,6 +193,7 @@ class GuiControl(QtWidgets.QMainWindow):
             self.print_to_ui(self.calib.cam_params)
             for i, data in enumerate(self.calib.cam_params):
                 tmp_data[i * 4:(i + 1) * 4] = struct.pack('f', data)
+
             cal_data = c_char_p(bytes(tmp_data))
             if RECTRL_WriteCalibrationData(CAM0, cal_data, len(tmp_data)) == 0:
                 self.print_to_ui('write calibration data successfully')
@@ -200,16 +201,27 @@ class GuiControl(QtWidgets.QMainWindow):
             # check bytes
             empty_data = bytearray(len(tmp_data))
             r_cal_data = c_char_p(bytes(empty_data))
+            data_array = []
             if RECTRL_ReadCalibrationData(CAM0, r_cal_data, len(tmp_data)) > 0:
                 _r_data = bytearray(r_cal_data.value)
                 data_array = [
                     struct.unpack('f', _r_data[i * 4:(i + 1) * 4])[0]
                     for i in range(len(_r_data)//4)]
+            RECTRL_Close()
+
+            len_equal = len(self.calib.cam_params) == len(data_array)
+            are_equal = all(
+                round(a, 3) == round(b, 3)
+                for a, b in zip(self.calib.cam_params, data_array))
+
+            if not len_equal or not are_equal:
+                self.set_pass_fail_state('FAIL')
+                self.print_to_ui('cannot read calibration data, try again!')
+                self.change_step(task_states.StepState.ROM_WRITING)
+            else:
                 self.print_to_ui('read calibration data successfully')
                 self.print_to_ui(data_array)
-
-            RECTRL_Close()
-            self.change_step(task_states.StepState.INITIALIZATION)
+                self.change_step(task_states.StepState.INITIALIZATION)
 
     def load_data(self):
         files = glob.glob(os.path.join(self.calib.save_path, '*.jpg'))
