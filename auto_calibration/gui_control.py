@@ -1,20 +1,12 @@
 from datetime import datetime
 import glob
 import os
-import struct
 
 import auto_calib_ui
 import camera_calibrator as calib
 import csi_camera as csi
 import dynamixel_control as dxl
 import gui_worker as worker
-from novitec_lib.rectrl import (
-    c_char_p,
-    CAM0,
-    RECTRL_Close,
-    RECTRL_Open,
-    RECTRL_ReadCalibrationData,
-    RECTRL_WriteCalibrationData)
 
 import numpy as np
 from PySide6 import QtCore, QtGui, QtWidgets
@@ -31,10 +23,14 @@ class GuiControl(QtWidgets.QMainWindow):
         self.calib = calib.CameraCalibrator(9, 6, 40.0, calib_pix_tol=1.1)
         self.cam = csi.CSICamera(
             '/dev/v4l/by-path/platform-tegra-capture-vi-video-index0', 1920, 1080)
+
         self.capture_thread = worker.CaptureThreadWorker(self.cam, self.calib, self.dxl)
         self.capture_thread.streaming_signal.connect(self.get_image)
         self.capture_thread.acquisition_signal.connect(self.do_calibration)
         self.capture_thread.ui_log_signal.connect(self.get_string)
+        self.rom_write_thread = worker.ROMWriteThreadWorker()
+        self.rom_write_thread.done_signal.connect(self.write_rom)
+        self.rom_write_thread.ui_log_signal.connect(self.get_string)
 
         self.auto_calib_gui.connection_push_button.toggled.connect(
             self.on_connection_button_toggled)
@@ -62,6 +58,8 @@ class GuiControl(QtWidgets.QMainWindow):
     def closeEvent(self, event: QtCore.QEvent):
         self.capture_thread.run_thread = False
         self.capture_thread.wait()
+        self.rom_write_thread.run_thread = False
+        self.rom_write_thread.wait()
         self.dxl.close_dxl()
         self.cam.release_camera()
         event.accept()
@@ -94,7 +92,6 @@ class GuiControl(QtWidgets.QMainWindow):
             self.set_button_state(
                 'rom',
                 task_states.ButtonState.DISABLED)
-            self.set_pass_fail_state()
         elif step == task_states.StepState.INITIALIZATION:
             self.set_button_state(
                 'initialization',
@@ -105,7 +102,6 @@ class GuiControl(QtWidgets.QMainWindow):
             self.set_button_state(
                 'rom',
                 task_states.ButtonState.DISABLED)
-            self.set_pass_fail_state()
         elif step == task_states.StepState.CALIBRATION:
             self.set_button_state(
                 'initialization',
@@ -113,7 +109,9 @@ class GuiControl(QtWidgets.QMainWindow):
             self.set_button_state(
                 'calibration',
                 task_states.ButtonState.ENABLED)
-            self.set_pass_fail_state()
+            self.set_button_state(
+                'rom',
+                task_states.ButtonState.DISABLED)
         elif step == task_states.StepState.CALIBRATION_FAIL:
             self.set_button_state(
                 'calibration',
@@ -139,12 +137,24 @@ class GuiControl(QtWidgets.QMainWindow):
 
     def set_pass_fail_state(self, state='Result'):
         self.auto_calib_gui.pass_fail_label.setText(state)
-        if state == 'PASS':
+        if state == 'Connected':
+            self.auto_calib_gui.pass_fail_label.setStyleSheet(
+               'color: white;')
+        elif state == 'Initialized':
+            self.auto_calib_gui.pass_fail_label.setStyleSheet(
+               'color: white;')
+        elif state == 'Calibrating...':
+            self.auto_calib_gui.pass_fail_label.setStyleSheet(
+               'color: white; background-color: rgb(0, 0, 255);')
+        elif state == 'PASS':
             self.auto_calib_gui.pass_fail_label.setStyleSheet(
                'color: white; background-color: rgb(0, 255, 0);')
         elif state == 'FAIL':
             self.auto_calib_gui.pass_fail_label.setStyleSheet(
                'color: white; background-color: rgb(255, 0, 0);')
+        elif state == 'Writing...':
+            self.auto_calib_gui.pass_fail_label.setStyleSheet(
+               'color: white; background-color: rgb(0, 0, 255);')
         else:
             self.auto_calib_gui.pass_fail_label.setStyleSheet('')
 
@@ -160,17 +170,23 @@ class GuiControl(QtWidgets.QMainWindow):
                 self.print_to_ui('Open CSI camera successfully!')
                 self.capture_thread.run_thread = True
                 self.capture_thread.start()
+                self.rom_write_thread.run_thread = True
+                self.rom_write_thread.start()
+                self.set_pass_fail_state('Connected')
                 self.change_step(task_states.StepState.INITIALIZATION)
             else:
                 self.print_to_ui('Cannot open camera')
         else:
             self.capture_thread.run_thread = False
             self.capture_thread.wait()
+            self.rom_write_thread.run_thread = False
+            self.rom_write_thread.wait()
             self.cam.release_camera()
             self.print_to_ui('Rlease camera')
             if self.dxl.close_dxl() == task_states.CameraState.TASK_SUCCESS:
                 self.print_to_ui('Close dxl')
             self.auto_calib_gui.image_stream.clear()
+            self.set_pass_fail_state('Disconnected')
             self.change_step(task_states.StepState.CAMERA_CONNECTION)
 
     def on_initialization_button_toggled(self, is_checked):
@@ -178,50 +194,40 @@ class GuiControl(QtWidgets.QMainWindow):
             self.calib.initialize_save_folder()
             self.capture_thread.img_cnt = 0
             self.dxl.back_to_homing_position()
+            self.print_to_ui('Initialize calibration jig successfully')
+            self.set_pass_fail_state('Initialized')
             self.change_step(task_states.StepState.CALIBRATION)
 
     def on_calibration_button_toggled(self, is_checked):
         if is_checked:
             self.disable_all_buttons()
+            self.set_pass_fail_state('Calibrating...')
             self.capture_thread.enable_data_acquisition()
 
     def on_rom_writing_button_toggled(self, is_checked):
         if is_checked:
-            self.print_to_ui('rom writing button clicked!')
-            RECTRL_Open()
-            tmp_data = bytearray()
-            self.print_to_ui(self.calib.cam_params)
-            for i, data in enumerate(self.calib.cam_params):
-                tmp_data[i * 4:(i + 1) * 4] = struct.pack('f', data)
+            self.disable_all_buttons()
+            self.set_pass_fail_state('Writing...')
+            self.rom_write_thread.enable_write_rom()
+            self.print_to_ui('Waiting for complete...')
 
-            cal_data = c_char_p(bytes(tmp_data))
-            if RECTRL_WriteCalibrationData(CAM0, cal_data, len(tmp_data)) == 0:
-                self.print_to_ui('write calibration data successfully')
+    def write_rom(self):
+        self.enable_all_buttons()
+        data_array = self.rom_write_thread.data_array
+        len_equal = len(self.calib.cam_params) == len(data_array)
+        are_equal = all(
+            round(a, 3) == round(b, 3)
+            for a, b in zip(self.calib.cam_params, data_array))
 
-            # check bytes
-            empty_data = bytearray(len(tmp_data))
-            r_cal_data = c_char_p(bytes(empty_data))
-            data_array = []
-            if RECTRL_ReadCalibrationData(CAM0, r_cal_data, len(tmp_data)) > 0:
-                _r_data = bytearray(r_cal_data.value)
-                data_array = [
-                    struct.unpack('f', _r_data[i * 4:(i + 1) * 4])[0]
-                    for i in range(len(_r_data)//4)]
-            RECTRL_Close()
-
-            len_equal = len(self.calib.cam_params) == len(data_array)
-            are_equal = all(
-                round(a, 3) == round(b, 3)
-                for a, b in zip(self.calib.cam_params, data_array))
-
-            if not len_equal or not are_equal:
-                self.set_pass_fail_state('FAIL')
-                self.print_to_ui('cannot read calibration data, try again!')
-                self.change_step(task_states.StepState.ROM_WRITING)
-            else:
-                self.print_to_ui('read calibration data successfully')
-                self.print_to_ui(data_array)
-                self.change_step(task_states.StepState.INITIALIZATION)
+        if not len_equal or not are_equal:
+            self.set_pass_fail_state('FAIL')
+            self.print_to_ui('Cannot read calibration data, try again!')
+            self.change_step(task_states.StepState.ROM_WRITING)
+        else:
+            self.print_to_ui('Read calibration data successfully')
+            self.print_to_ui(data_array)
+            self.set_pass_fail_state('Connected')
+            self.change_step(task_states.StepState.INITIALIZATION)
 
     def load_data(self):
         files = glob.glob(os.path.join(self.calib.save_path, '*.jpg'))
@@ -275,6 +281,7 @@ class GuiControl(QtWidgets.QMainWindow):
                 cam_tvec[1],  # translate y
                 cam_tvec[2]]  # translate z
             self.print_to_ui(self.calib.cam_params)
+            self.rom_write_thread.input_data_array = self.calib.cam_params
             self.set_pass_fail_state('PASS')
             self.change_step(task_states.StepState.ROM_WRITING)
         else:

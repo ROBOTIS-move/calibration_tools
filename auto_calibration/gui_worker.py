@@ -1,7 +1,16 @@
 import copy
+import struct
 import time
 
 import cv2
+
+from novitec_lib.rectrl import (
+    c_char_p,
+    CAM0,
+    RECTRL_Close,
+    RECTRL_Open,
+    RECTRL_ReadCalibrationData,
+    RECTRL_WriteCalibrationData)
 
 from PySide6 import QtCore, QtGui
 
@@ -122,3 +131,49 @@ class CaptureThreadWorker(QtCore.QThread):
                     if qimg is None:
                         continue
                     self.streaming_signal.emit(qimg)
+
+
+class ROMWriteThreadWorker(QtCore.QThread):
+
+    done_signal = QtCore.Signal()
+    ui_log_signal = QtCore.Signal(str)
+
+    def __init__(self):
+        super().__init__()
+        self.input_data_array = []
+        self.data_array = []
+        self.run_thread = False
+        self.enable_rom_writing = False
+
+    def enable_write_rom(self):
+        self.enable_rom_writing = True
+
+    def run(self):
+        while self.run_thread:
+            if self.enable_rom_writing:
+                RECTRL_Open()
+                self.ui_log_signal.emit('Open i2c successfully')
+                tmp_data = bytearray()
+                for i, data in enumerate(self.input_data_array):
+                    tmp_data[i * 4:(i + 1) * 4] = struct.pack('f', data)
+
+                cal_data = c_char_p(bytes(tmp_data))
+                self.ui_log_signal.emit('Writing...')
+                if RECTRL_WriteCalibrationData(CAM0, cal_data, len(tmp_data)) == 0:
+                    self.ui_log_signal.emit('Write calibration data successfully')
+
+                empty_data = bytearray(len(tmp_data))
+                r_cal_data = c_char_p(bytes(empty_data))
+
+                self.ui_log_signal.emit('Reading...')
+                if RECTRL_ReadCalibrationData(CAM0, r_cal_data, len(tmp_data)) > 0:
+                    self.ui_log_signal.emit('Reading calibration data done')
+                    _r_data = bytearray(r_cal_data.value)
+                    self.data_array = [
+                        struct.unpack('f', _r_data[i * 4:(i + 1) * 4])[0]
+                        for i in range(len(_r_data)//4)]
+                RECTRL_Close()
+                self.ui_log_signal.emit('Close i2c successfully')
+
+                self.done_signal.emit()
+                self.enable_rom_writing = False
