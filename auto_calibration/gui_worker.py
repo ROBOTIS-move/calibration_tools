@@ -28,16 +28,22 @@ class CaptureThreadWorker(QtCore.QThread):
         self.run_thread = False
 
     def convert_cv_to_qimg(self, cv_img):
-        rgb_image = cv2.cvtColor(cv_img, cv2.COLOR_BGR2RGB)
-        height, width, channel = rgb_image.shape
-        bytes_per_line = channel * width
-        qimage = QtGui.QImage(
-            rgb_image.data,
-            width,
-            height,
-            bytes_per_line,
-            QtGui.QImage.Format_RGB888)
-        return qimage
+        try:
+            rgb_image = cv2.cvtColor(cv_img, cv2.COLOR_BGR2RGB)
+            height, width, channel = rgb_image.shape
+            bytes_per_line = channel * width
+            qimage = QtGui.QImage(
+                rgb_image.data,
+                width,
+                height,
+                bytes_per_line,
+                QtGui.QImage.Format_RGB888)
+            return qimage
+        except cv2.error as e:
+            self.ui_log_signal.emit(f'color convert exception: {e}')
+        except TypeError as e:
+            self.ui_log_signal.emit(f'type error: {e}')
+        return None
 
     def draw_corners(self, cv_img, corners):
         for corner in corners:
@@ -78,6 +84,8 @@ class CaptureThreadWorker(QtCore.QThread):
                                 3,
                                 cv2.LINE_AA)
                             qimg = self.convert_cv_to_qimg(img)
+                            if qimg is None:
+                                continue
                             self.streaming_signal.emit(qimg)
 
                             copied_obj_3d = copy.deepcopy(obj_3d)
@@ -109,5 +117,8 @@ class CaptureThreadWorker(QtCore.QThread):
                         self.ui_log_signal.emit('img none!')
             else:
                 img = self.cam.get_image()
-                qimg = self.convert_cv_to_qimg(img)
-                self.streaming_signal.emit(qimg)
+                if img is not None:
+                    qimg = self.convert_cv_to_qimg(img)
+                    if qimg is None:
+                        continue
+                    self.streaming_signal.emit(qimg)

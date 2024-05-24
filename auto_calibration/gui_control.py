@@ -28,7 +28,7 @@ class GuiControl(QtWidgets.QMainWindow):
         self.auto_calib_gui = auto_calib_ui.Ui_MainWindow()
         self.auto_calib_gui.setupUi(self)
         self.dxl = dxl.DynamixelControl('/dev/ttyUSB1', 1, 4000000)
-        self.calib = calib.CameraCalibrator(9, 6, 40.0, calib_tol=1.1)
+        self.calib = calib.CameraCalibrator(9, 6, 40.0, calib_pix_tol=1.1)
         self.cam = csi.CSICamera(
             '/dev/v4l/by-path/platform-tegra-capture-vi-video-index0', 1920, 1080)
         self.capture_thread = worker.CaptureThreadWorker(self.cam, self.calib, self.dxl)
@@ -193,6 +193,7 @@ class GuiControl(QtWidgets.QMainWindow):
             self.print_to_ui(self.calib.cam_params)
             for i, data in enumerate(self.calib.cam_params):
                 tmp_data[i * 4:(i + 1) * 4] = struct.pack('f', data)
+
             cal_data = c_char_p(bytes(tmp_data))
             if RECTRL_WriteCalibrationData(CAM0, cal_data, len(tmp_data)) == 0:
                 self.print_to_ui('write calibration data successfully')
@@ -200,16 +201,27 @@ class GuiControl(QtWidgets.QMainWindow):
             # check bytes
             empty_data = bytearray(len(tmp_data))
             r_cal_data = c_char_p(bytes(empty_data))
+            data_array = []
             if RECTRL_ReadCalibrationData(CAM0, r_cal_data, len(tmp_data)) > 0:
                 _r_data = bytearray(r_cal_data.value)
                 data_array = [
                     struct.unpack('f', _r_data[i * 4:(i + 1) * 4])[0]
                     for i in range(len(_r_data)//4)]
+            RECTRL_Close()
+
+            len_equal = len(self.calib.cam_params) == len(data_array)
+            are_equal = all(
+                round(a, 3) == round(b, 3)
+                for a, b in zip(self.calib.cam_params, data_array))
+
+            if not len_equal or not are_equal:
+                self.set_pass_fail_state('FAIL')
+                self.print_to_ui('cannot read calibration data, try again!')
+                self.change_step(task_states.StepState.ROM_WRITING)
+            else:
                 self.print_to_ui('read calibration data successfully')
                 self.print_to_ui(data_array)
-
-            RECTRL_Close()
-            self.change_step(task_states.StepState.INITIALIZATION)
+                self.change_step(task_states.StepState.INITIALIZATION)
 
     def load_data(self):
         files = glob.glob(os.path.join(self.calib.save_path, '*.jpg'))
@@ -239,7 +251,16 @@ class GuiControl(QtWidgets.QMainWindow):
         self.print_to_ui('[Translation (cam to pin)]')
         self.print_to_ui(cam_tvec)
         self.enable_all_buttons()
-        if reproj_err[0] < self.calib.calib_tol:
+
+        diff_vec = abs(cam_tvec - self.calib.calib_tvec_avg)
+        threshold_x = 7 * self.calib.calib_tvec_sd[0]
+        threshold_y = 7 * self.calib.calib_tvec_sd[1]
+        threshold_z = 5 * self.calib.calib_tvec_sd[2]
+
+        if reproj_err[0] < self.calib.calib_pix_tol and \
+           diff_vec[0] < threshold_x and \
+           diff_vec[1] < threshold_y and \
+           diff_vec[2] < threshold_z:
             self.calib.save_result(reproj_err, cam_mat, cam_dcm, cam_tvec)
             rod = self.calib.convert_to_rodrigues(cam_dcm)
             self.calib.cam_params = [
