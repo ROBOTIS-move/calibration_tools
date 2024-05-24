@@ -8,4 +8,5 @@ Changelog for package calibration_tools develop
 * 외부 파라미터 검증 단계 추가 by @pung87 in https://github.com/ROBOTIS-move/calibration_tools/pull/3
 * PASS/FAIL 표시기 위치 변경, ROM writing 결과 표시 by @pung87 in https://github.com/ROBOTIS-move/calibration_tools/pull/3
 * Connection시 간헐적으로 발생하는 cvtcolor 오류 해결 by @pung87 in https://github.com/ROBOTIS-move/calibration_tools/pull/3
+* ROM writing을 위한 worker 추가 by @pung87 in https://github.com/ROBOTIS-move/calibration_tools/pull/4
 
