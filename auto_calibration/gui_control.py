@@ -216,7 +216,7 @@ class GuiControl(QtWidgets.QMainWindow):
         data_array = self.rom_write_thread.data_array
         len_equal = len(self.calib.cam_params) == len(data_array)
         are_equal = all(
-            round(a, 3) == round(b, 3)
+            abs(a-b) < 0.001
             for a, b in zip(self.calib.cam_params, data_array))
 
         if not len_equal or not are_equal:
