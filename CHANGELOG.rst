@@ -1,6 +1,10 @@
 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 Changelog for package calibration_tools
 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+0.14.2 (2024-06-14)
+------------------
+* 리포지토리 매니저 변경 by @pung87 in https://github.com/ROBOTIS-move/calibration_tools/pull/6
+
 0.14.1 (2024-06-14)
 ------------------
 * ROM writing 과정에서 발생하는 부동소수점 오차로 인한 실패 상황 대응 by @pung87 in https://github.com/ROBOTIS-move/calibration_tools/pull/5
