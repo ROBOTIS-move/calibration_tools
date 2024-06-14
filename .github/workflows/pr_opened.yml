@@ -160,5 +160,5 @@ jobs:
           gh pr edit ${{ github.event.pull_request.number }} --add-assignee $ASSIGNEE
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          TOTAL_MANAGER: 'kaym9n' # 총담당자의 GitHub 사용자 이름
+          TOTAL_MANAGER: 'DongyunRobotis' # 총담당자의 GitHub 사용자 이름
         shell: bash
